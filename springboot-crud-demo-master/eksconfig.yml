@@ -1,0 +1,14 @@
+apiVersion: eksctl.io/vlalpha5
+kind: ClusterConfig
+
+metadata:
+  name: EKS-cluster
+  region: us-east-1
+  
+nodeGroups:
+  - name: ng-1
+    instancetype: t2.small
+    desiredCapacity: 3
+    ssh:
+      publickeyName: eks
+  
