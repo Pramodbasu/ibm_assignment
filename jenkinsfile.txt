@@ -1,0 +1,364 @@
+pipeline{
+ 
+  agent{
+   label{
+     
+	 label "Todo-app-jenkins-slave"
+	 customWorkSpace"/var/lib/jenkins/workspace/${env.JOB_NAME}"
+   
+   }
+   
+  }
+
+  environment
+  {
+     OAGITRO= credentials("64746hd-28464jk-367484kdmd")
+	 DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE= credentials("DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE")
+  
+  DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE= credentials("DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE")
+  
+  DOCKER_CONTENT_TRUST="1"
+  
+  DOCKER_CONTENT_TRUST_SERVER=credentials("DOCKER_CONTENT_TRUST_SERVER")
+  
+  }
+
+
+
+parameters{
+
+
+choice(
+name: 'Deploy_through',
+choices:"Branch\nImage",
+description:"ypu wanna deploy through/Image"
+)
+
+string(
+
+name:'image_version',
+defaultValue: '${BUILD_DISPLAY_NAME}',
+description:'please left as  default or pass image you want to deploy thropugh'
+)
+
+choice(
+name: 'Run_Sonar',
+choices:"yes\No",
+description:"check sonar qualitygates"
+)
+
+
+choice(
+name: 'Metaname',
+choices:"magneta-feed",
+description:"serviceName!"
+)
+
+string(
+
+name:'BRANCH',
+
+description:'git branch yopu want to deploy'
+
+)
+
+string(
+
+name:'activeProfile',
+
+description:'Active profile want to deploy'
+
+)
+
+string(
+
+name:'KUBE_BRANCH',
+
+description:'git branch for devops (k8s) to deploy',
+defaultValue:'*/master'
+
+)
+
+tools{
+maven "mvn-3.5.6"
+}
+
+
+stages
+{
+   stage('Validate environment')
+
+{
+  steps 
+  {
+    script
+	{
+	  if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("dev2"))
+	  {env.ENVIRONEMT="dev2"}
+	  
+	  
+	  if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("dev"))
+	  {env.ENVIRONEMT="dev"}
+	  
+	  if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("qa"))
+	  {env.ENVIRONEMT="qa"}
+	  
+	  if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("test"))
+	  {env.ENVIRONEMT="test"}
+	  
+	  if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("preprod"))
+	  {env.ENVIRONEMT="preprod"}
+	  
+	if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("prod"))
+	  {env.ENVIRONEMT="prod"}
+	  
+	  
+	  if(env.JOB_NAME.toLowercase(),minus(env.GIT_BRANCH).contains("country")===false)
+	  {error("wrong Country coise . you are not authorised for this couintry)}
+	  
+	}
+  
+  }
+
+
+}
+
+
+
+stage('parse json configuration and set the variable")
+{
+  steps{
+  script{
+   env.Replica=sh(returnStdout:true,script:'jq.${country}.${Environment}.replica configs/${metaName}
+  
+  env.efsVolumen=sh(returnStdout:true,script:'jq.${country}.${Environment}.efs_volume configs/${metaName}
+  
+  env.projectName=sh(returnStdout:true,script:'jq.${country}.${Environment}.projectName configs/${metaName}
+  
+  env.lb_group=sh(returnStdout:true,script:'jq.${country}.${Environment}.lb_group configs/${metaName}
+  
+  env.minreplicas=sh(returnStdout:true,script: 'jq.${country}.${Enviroment}.minreplicas configs/${minreplicas}
+  
+  env.maxreplicas=sh(return Stdout:true, script: 'jq.${country}.${ENVIRONMENT}.maxreplicas configs/${maxreplicas}
+  
+  cputhreshold
+  cpulimit
+  memotylimit
+  k8s_s3_sitemap_role
+  jvmxmx
+  java_opts
+  
+  
+  }
+  }
+  
+  
+
+}
+
+
+stage('git checout source code')
+{
+   steps
+   {
+      checkout([$class: 'GITScm',
+	  branches: [[name:BRANCH]],
+	  doGenerateSubModules:false,
+	  exrtensions:[[$class:'CleanBeforeCheckout']],
+	  submoduleCfg:[],
+	  userRemoteConfigs:[[credentialsId:'637373dgdg-4747467yerte', url:'https://github.com/Pramodbasu/ibm_assignment.git']]
+	  
+	  ])
+   script{
+   commit_id=sh(returnStdout:true,script:'git rev-parse --short HEAD')
+   env.commit-id=commit_id.replaceAll(/\s*$/,'')
+   }
+   
+   }
+
+
+}
+
+
+
+stage("set build name")
+ {
+    steps{
+	  script{
+	  
+	   currentBuildid.displayName= "${Country}-${ENVIRONMENT}-${BUILD_NUMBER}-${env.commit-id}-${RUN_Sonar}"
+	   
+	  }
+	
+	}
+  }
+
+
+stage('git checout K8s code')
+{
+
+ steps{
+ checkout([$class='GitSCM',
+           branches:[[name:KUBE_BRANCH]],
+		   dogenerateSubmodulesConfigurations:false,
+		   extensions:[[$class: 'CleanCheckout', $class:'relativetagerDirectory',relativetargetDr:'devops']],
+		   submodulesCfg:[],
+		   userRemoteConfigs:[[credentialsId:'4526252hdhd-2e2324fs-2562',url:'https://github.com/Pramodbasu/ibm_assignment.git]]
+ ])
+ 
+ 
+ }
+
+}
+
+
+stage('Build and runtest')
+{
+ when
+ {
+    expression {params.Deploy_Through=='Branch'}
+	
+ 
+ }
+ 
+ steps{
+  sh '''
+  mvn -DFmaven.repo.local=/var/lib/jenkins/.m2/repository/todoapp-${Environment} clean install -U
+  '''
+ 
+ }
+
+}
+
+
+
+stage('Sonar Analysis')
+{
+when{
+ allOf
+ {
+   expression {param.Run_Sonar='yes'}
+   expression {params.Deploy_through=='Branch'}
+ 
+ }
+}
+
+environment{
+scannerHome= tool 'sonar-4.5'
+}
+
+steps{
+
+ withSonarQubeEnv('sonar-8-6-1')
+ {
+  sh '''
+  ${scannerHome}/bin/sonar-scanner\
+    -Dsonar.projectKey=oneapp-${metaname}-${Enviroment}\
+	-Dsonar.projectName=oneapp-${metaName}-${Enviroment}\
+	-Dsonar.projectversion=1.0\
+	-Dsonar.sources=.\	-Dsonar.java.libraries=/var/lib/jenkins/.m2/repository/org/projectlombok/lombok/1.10.5/lombok-1.18.54
+	-Dsonar.tests=.\
+	-Dsonar.junit.reportsPath=exporter/target/junit-reports\
+	-Dsonar.surefire.reportsPath=exporter/target/surefire-reports\
+	-Dsonar.coverage.jacoco.xmlreportPaths=/.target/site/jacoco/jacoc.xml\
+	-Dsonar.java.coverageplugin=jacoco\
+	-Dsonar.test.exclusions=exporter/src/main/java/*\
+	-Dsonar.test.inclusions=exporter/src/test/java/*\
+ '''
+ 
+ 
+ }
+ timeout{time:10 , unit:'MINUTES'}{
+ waitForQualityGate abortPipeline: true
+ }
+
+
+}
+
+}
+
+
+stage('jacoco code coverage')
+{
+ when {
+ 
+ expression {params.Deploy_through=='branch'}
+ }
+ steps{
+ 
+ jacoco{
+ exepattern:'**/**.exec',
+ classPattern: '**/classess',
+ sourcePattern: 'src/main/java'
+ exclusionPattern:'src/test*'
+ 
+ }
+ 
+ 
+ }
+
+
+}
+
+
+
+
+
+stage('Image to build and upload to ECR')
+{
+when{
+expression{params.Deploy_through=='Branch}
+}
+
+  steps{
+  
+  sh '''
+  export pomversion=${mvn -Dmaven.repo.local=/var/lib/jenkins/.m2/repository/oneapp-${ENVIROMENT} build-helper:}
+ echo "$pomversion
+echo "${image_version}"
+aws ecr get-login-password --region eu-central-1 --profile=oneapp | docker login-u AWS --password-stdin AWS_Password 
+./devops/make-ecr_image.sh ${metaname} ${image-version}
+''' 
+  
+  }
+}
+
+
+
+
+stage('deploy Build')
+{
+
+   steps{
+   
+   
+   sh '''
+   sed -ie "s,java_opts,$java_opts,g" devops/${Country}/${metaname}.yml
+   sed -ie "s/jxmx/$jvmxmx/g" devops/${Country}/${metaname}.yml
+   sed -ie "s/jxms/$jvxms/g" devops/${Country}/${metaname}.yml
+   sed -ie "s/jcpulimit/$cpulimit/g" devops/${Country}/${metaname}.yml
+   sed -ie "s/jmemeorylimit/$memorylimit/g" devops/${Country}/${metaname}.yml
+   same for memoryrequest , maxreplicas,metaname,projectname,profilevalue,envvalue,countryvalue,replicasvalue
+   sed -ie "s/namespace:.*$/namespace:oneapp-${Country}-${ENVIRONEMNT}/g" devops/${Country}/${metaName}.yml
+   
+	
+   
+   echo "===============  Heres  is the final yml output==========="
+   cat devops/${country}/${metaname}.yml
+   AWS_PROFILE=oneapp kubectl apply -f devops/${Country}/${metaname}.yml
+   '''
+   
+   }
+
+
+}
+
+
+
+
+
+}
+
+
+
+}
